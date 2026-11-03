@@ -754,23 +754,11 @@ std::string SerializeCvars(const std::set<std::string>* preserve_keys) {
 }
 
 std::string SerializeToTOML() {
-  return SerializeCvars(nullptr);
+  return SerializeFlags(std::nullopt, nullptr);
 }
 
 std::string SerializeToTOML(std::string_view category) {
-  std::lock_guard lock(GetRegistryMutex());
-  std::string result;
-  for (const auto& entry : GetRegistryStorage()) {
-    if (entry.category == category && !entry.is_transient &&
-        !IsLaunchOverride(entry) && entry.getter() != entry.default_value) {
-      if (entry.type == FlagType::String) {
-        result += entry.name + " = " + FormatTomlString(entry.getter()) + "\n";
-      } else {
-        result += entry.name + " = " + entry.getter() + "\n";
-      }
-    }
-  }
-  return result;
+  return SerializeFlags(category, nullptr);
 }
 
 void RegisterChangeCallback(std::string_view name, ChangeCallback callback) {
