@@ -24,6 +24,9 @@ namespace rex::input::mnk {
 
 void SetMouseLookActive(bool active);
 bool IsMouseLookActive();
+// UI-thread mouse displacement; reset drops pending motion on focus/capture loss.
+using MouseMotionCallback = void (*)(float dx, float dy, bool reset);
+void SetMouseMotionCallback(MouseMotionCallback callback);
 
 class MnkInputDriver final : public InputDriver,
                              public rex::ui::WindowInputListener,

@@ -45,6 +45,14 @@ REXCVAR_DEFINE_BOOL(guest_vblank_pacing, true, "GPU",
                     "Pace emulated vblank interrupts at the guest refresh rate when VSync is on")
     .lifecycle(rex::cvar::Lifecycle::kHotReload);
 
+// Preserve 1000 Hz for uncapped standalone runs; a capped launcher preset
+// can reduce interrupt dispatch work while keeping three frames' worth of
+// headroom for Fable II's two-vblank-per-frame progress gate.
+REXCVAR_DEFINE_INT32(fast_guest_vblank_hz, 1000, "GPU",
+                     "Virtual vblank frequency when guest pacing is disabled")
+    .range(120, 1000)
+    .lifecycle(rex::cvar::Lifecycle::kHotReload);
+
 namespace {
 
 rex::graphics::CommandProcessor::SwapPostEffect ParseSwapPostEffect(
@@ -162,10 +170,13 @@ X_STATUS GraphicsSystem::SetupGuestGpu(runtime::FunctionDispatcher* function_dis
         uint64_t guest_tick_frequency = chrono::Clock::guest_tick_frequency();
         uint64_t vsync_interval_ticks =
             std::max(uint64_t(1), uint64_t(double(guest_tick_frequency) / refresh_rate_hz));
-        uint64_t no_vsync_interval_ticks = std::max(uint64_t(1), guest_tick_frequency / 1000);
         uint64_t last_frame_time = chrono::Clock::QueryGuestTickCount();
         while (vsync_worker_running_) {
           uint64_t current_time = chrono::Clock::QueryGuestTickCount();
+          const uint64_t fast_rate_hz = uint64_t(std::clamp(
+              REXCVAR_GET(fast_guest_vblank_hz), int32_t(120), int32_t(1000)));
+          const uint64_t no_vsync_interval_ticks =
+              std::max(uint64_t(1), guest_tick_frequency / fast_rate_hz);
           uint64_t interval_ticks =
               (REXCVAR_GET(vsync) && REXCVAR_GET(guest_vblank_pacing))
                   ? vsync_interval_ticks : no_vsync_interval_ticks;

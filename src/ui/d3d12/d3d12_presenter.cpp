@@ -555,6 +555,19 @@ void D3D12Presenter::PaintContext::DestroySwapChain() {
 }
 
 Presenter::PaintResult D3D12Presenter::PaintAndPresentImpl(bool execute_ui_drawers) {
+  // Reject suppressed frames before building or submitting GPU compositor work.
+  // Vulkan already performs the present admission check before recording draws.
+  const bool vsync_gate_allows = VsyncPresentGateAllows();
+  if (!vsync_gate_allows || !GuestVblankPaceAllows()) {
+    // An active overlay's draw callback was skipped, so rearm its next paint
+    // when waiting for the host vblank. Guest-frame pacing resumes when a
+    // fresh guest frame requests repaint instead of spinning the UI thread.
+    if (execute_ui_drawers && !vsync_gate_allows) {
+      RequestUIPaintFromUIThread();
+    }
+    return PaintResult::kPresented;
+  }
+
   // Begin the command list with the command allocator not currently potentially
   // used on the GPU.
   UINT64 current_paint_submission = paint_context_.paint_submission_tracker.GetCurrentSubmission();
@@ -1147,22 +1160,6 @@ Presenter::PaintResult D3D12Presenter::PaintAndPresentImpl(bool execute_ui_drawe
     ui_submission_tracker_.NextSubmission();
   }
   paint_context_.paint_submission_tracker.NextSubmission();
-  if (!VsyncPresentGateAllows()) {
-    // A frame was already presented on this host vblank (the `vsync` cvar is
-    // enabled). Skip this present: the swap chain keeps showing the last
-    // presented frame until the next paint presents the fresh content, which
-    // happens on the next vblank at the latest while any UI drawer is active
-    // (the continuous UI repaint is requested after every draw). This keeps
-    // the host present rate capped at the monitor refresh rate.
-    return PaintResult::kPresented;
-  }
-  if (!GuestVblankPaceAllows()) {
-    // The `pace_to_guest_vblank` cvar is enabled: at most one present per
-    // guest-refresh interval, so the game runs at its native guest vblank
-    // framerate. The swap chain keeps showing the last presented frame until
-    // the next allowed present.
-    return PaintResult::kPresented;
-  }
   // Present as soon as possible, without waiting for vsync (the host refresh
   // rate may be something like 144 Hz, which is not a multiple of the common
   // 30 Hz or 60 Hz guest refresh rate), and allowing dropping outdated queued

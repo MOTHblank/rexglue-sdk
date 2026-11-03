@@ -545,7 +545,7 @@ void PipelineCache::InitializeShaderStorage(const std::filesystem::path& cache_r
     size_t creation_thread_needed_count =
         std::max(std::min(pipeline_stored_descriptions.size(), logical_processor_count) - size_t(1),
                  creation_thread_original_count);
-    while (creation_threads_.size() < creation_thread_original_count) {
+    while (creation_threads_.size() < creation_thread_needed_count) {
       size_t creation_thread_index = creation_threads_.size();
       std::unique_ptr<rex::thread::Thread> creation_thread = rex::thread::Thread::Create(
           {}, [this, creation_thread_index]() { CreationThread(creation_thread_index); });
@@ -3100,7 +3100,9 @@ void PipelineCache::StorageWriteThread() {
     bool write_pipeline = false;
     {
       std::unique_lock<std::mutex> lock(storage_write_request_lock_);
-      if (storage_write_thread_shutdown_) {
+      // Persist queued shaders and pipeline descriptions before closing the files.
+      if (storage_write_thread_shutdown_ && storage_write_shader_queue_.empty() &&
+          storage_write_pipeline_queue_.empty()) {
         return;
       }
       if (!storage_write_shader_queue_.empty()) {

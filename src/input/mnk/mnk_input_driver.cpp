@@ -24,11 +24,22 @@
 #include <string_view>
 
 REXCVAR_DEFINE_BOOL(mnk_mode, false, "Input", "Enable keyboard/mouse controller emulation");
+REXCVAR_DEFINE_BOOL(mnk_direct_mouse, false, "Input",
+                    "Use raw mouse motion callback instead of virtual right stick");
 REXCVAR_DEFINE_BOOL(mnk_mouse, false, "Input",
                     "Use the mouse for the right stick. Off means the right stick comes "
                     "from the keybind_rstick_* keys only");
-REXCVAR_DEFINE_DOUBLE(mnk_sensitivity, 1.0, "Input", "Mouse sensitivity for right stick")
-    .range(0.01, 10.0);
+REXCVAR_DEFINE_DOUBLE(mnk_sensitivity, 1.0, "Input", "Mouse horizontal sensitivity")
+    .range(0.001, 32.0);
+REXCVAR_DEFINE_DOUBLE(mnk_sensitivity_y, 1.0, "Input", "Mouse vertical sensitivity")
+    .range(0.001, 32.0);
+REXCVAR_DEFINE_BOOL(mnk_invert_y, false, "Input", "Invert vertical mouse input");
+REXCVAR_DEFINE_INT32(mnk_deadzone_compensation, 0, "Input",
+                     "Additional mouse-only right-stick deadzone compensation")
+    .range(0, 12000);
+REXCVAR_DEFINE_INT32(mnk_mouse_flick_buffer_polls, 4, "Input",
+                     "Extra guest polls to retain clipped mouse motion (0 disables buffering)")
+    .range(0, 12);
 
 REXCVAR_DEFINE_STRING(keybind_a, "Semicolon,Space", "Input/Keybinds/Controller", "A button");
 REXCVAR_DEFINE_STRING(keybind_b, "Quote,Backspace", "Input/Keybinds/Controller", "B button");
@@ -124,20 +135,29 @@ std::string_view TrimSpaces(std::string_view s) {
 
 bool TokenPressed(const bool (&key_down)[256], std::string_view token, uint8_t live_mods) {
   uint8_t want = TakeModifiers(token);
-  if (want != live_mods) {
-    return false;
-  }
   rex::ui::VirtualKey vk = rex::ui::ParseVirtualKey(token);
   if (vk == rex::ui::VirtualKey::kNone) {
     return false;
   }
+  // Plain binds (WASD, E, etc.) must keep working while Shift is held.
+  // Explicit chords still check the specified modifier mask exactly.
+  uint8_t own = 0;
+  if (vk == rex::ui::VirtualKey::kShift) own = kModShift;
+  if (vk == rex::ui::VirtualKey::kControl) own = kModCtrl;
+  if (vk == rex::ui::VirtualKey::kMenu) own = kModAlt;
+  if (want != 0 && want != (live_mods & ~own)) return false;
   uint16_t idx = static_cast<uint16_t>(vk);
   return idx < 256 && key_down[idx];
 }
 
 std::atomic<bool> mouse_look_active{true};
+std::atomic<MouseMotionCallback> mouse_motion_callback{nullptr};
 
 }  // namespace
+
+void SetMouseMotionCallback(MouseMotionCallback callback) {
+  mouse_motion_callback.store(callback, std::memory_order_release);
+}
 
 void SetMouseLookActive(bool active) {
   mouse_look_active.store(active, std::memory_order_relaxed);
@@ -265,6 +285,12 @@ X_RESULT MnkInputDriver::GetDeviceState(DeviceId id, X_INPUT_STATE* out_state) {
                           has_focus_ && is_active());
 
   if (!is_active() || !has_focus_) {
+    // No delayed motion may survive entering a menu or losing focus.
+    {
+      std::lock_guard lock(state_mutex_);
+      mouse_dx_ = 0.0f;
+      mouse_dy_ = 0.0f;
+    }
     if (out_state) {
       std::memset(out_state, 0, sizeof(*out_state));
       out_state->packet_number = packet_number_;
@@ -320,6 +346,12 @@ X_RESULT MnkInputDriver::GetDeviceState(DeviceId id, X_INPUT_STATE* out_state) {
   if (IsBindPressed(key_down_, REXCVAR_GET(keybind_lstick_down)))
     ly -= INT16_MAX;
 
+  // WASD diagonals should not travel sqrt(2) times faster than cardinal
+  // movement when interpreted by games that do not normalize the stick.
+  if (lx != 0 && ly != 0) {
+    lx = (lx * 23170) / 32767;
+    ly = (ly * 23170) / 32767;
+  }
   int32_t rx = 0;
   int32_t ry = 0;
   if (IsBindPressed(key_down_, REXCVAR_GET(keybind_rstick_left)))
@@ -331,17 +363,47 @@ X_RESULT MnkInputDriver::GetDeviceState(DeviceId id, X_INPUT_STATE* out_state) {
   if (IsBindPressed(key_down_, REXCVAR_GET(keybind_rstick_down)))
     ry -= INT16_MAX;
 
-  if (REXCVAR_GET(mnk_mouse) && IsMouseLookActive()) {
-    double sensitivity = REXCVAR_GET(mnk_sensitivity);
-    constexpr double kBaseScale = 200.0;
-    rx += static_cast<int32_t>(double(mouse_dx_) * sensitivity * kBaseScale);
-    ry += static_cast<int32_t>(double(-mouse_dy_) * sensitivity * kBaseScale);
+  if (REXCVAR_GET(mnk_mouse) && IsMouseLookActive() && !REXCVAR_GET(mnk_direct_mouse)) {
+    constexpr double kBaseScale = 256.0;
+    // An Xbox stick tops out at +/-32767. Previously any mouse movement
+    // past that limit was discarded on every poll, so high-DPI flicks barely
+    // moved the camera regardless of sensitivity. Keep a bounded remainder
+    // in the existing fractional delta accumulator. This preserves more
+    // distance across guest polls without ever exceeding the native stick
+    // range or changing a physical gamepad's input.
+    const auto consume_mouse_axis = [](float& queued_pixels, double units_per_pixel) -> int32_t {
+      if (!std::isfinite(queued_pixels) || !std::isfinite(units_per_pixel) ||
+          units_per_pixel == 0.0) {
+        queued_pixels = 0.0f;
+        return 0;
+      }
+      constexpr double kStickMax = 32767.0;
+      const double max_buffer = kStickMax *
+          (1.0 + REXCVAR_GET(mnk_mouse_flick_buffer_polls));
+      const double motion = std::clamp(double(queued_pixels) * units_per_pixel,
+                                       -max_buffer, max_buffer);
+      const double consumed = std::trunc(std::clamp(motion, -kStickMax, kStickMax));
+      // Keep sub-stick-unit fractional movement too, so slow mouse motion is
+      // not quantized away at low sensitivity.
+      queued_pixels = static_cast<float>((motion - consumed) / units_per_pixel);
+      if (consumed == 0.0) return 0;
+      const double magnitude = std::abs(consumed);
+      const int deadzone = REXCVAR_GET(mnk_deadzone_compensation);
+      const int value = static_cast<int>(std::lround(
+          deadzone + magnitude * (kStickMax - deadzone) / kStickMax));
+      return consumed < 0.0 ? -value : value;
+    };
+    rx += consume_mouse_axis(mouse_dx_,
+          REXCVAR_GET(mnk_sensitivity) * kBaseScale);
+    ry += consume_mouse_axis(mouse_dy_,
+          -REXCVAR_GET(mnk_sensitivity_y) * kBaseScale *
+          (REXCVAR_GET(mnk_invert_y) ? -1.0 : 1.0));
+  } else {
+    // Mouse look turned off: discard queued movement; never play it back
+    // when the player re-enables look or returns from a menu.
+    mouse_dx_ = 0.0f;
+    mouse_dy_ = 0.0f;
   }
-  // Drained unconditionally: deltas keep accumulating in OnMouseMove while the
-  // mouse is off, and toggling it on would otherwise dump the whole backlog
-  // into one frame as a camera snap.
-  mouse_dx_ = 0.0f;
-  mouse_dy_ = 0.0f;
 
   auto clamp16 = [](int32_t v) -> int16_t {
     return static_cast<int16_t>(std::clamp(v, (int32_t)INT16_MIN, (int32_t)INT16_MAX));
@@ -450,6 +512,11 @@ void MnkInputDriver::ReleaseMouseCaptureFromUIThread(rex::ui::Window* window) {
   window->SetRelativeMouseMode(false);
   relative_mouse_mode_ = false;
   window->ReleaseMouse();
+  if (auto callback = mouse_motion_callback.load(std::memory_order_acquire))
+    callback(0.0f, 0.0f, true);
+  std::lock_guard lock(state_mutex_);
+  mouse_dx_ = 0.0f;
+  mouse_dy_ = 0.0f;
 }
 
 void MnkInputDriver::RecenterCursorFromUIThread(int32_t x, int32_t y) {
@@ -510,6 +577,12 @@ void MnkInputDriver::OnMouseDown(rex::ui::MouseEvent& e) {
     case rex::ui::MouseEvent::Button::kMiddle:
       SetKeyState(static_cast<uint16_t>(VirtualKey::kMButton), true);
       break;
+    case rex::ui::MouseEvent::Button::kX1:
+      SetKeyState(static_cast<uint16_t>(VirtualKey::kXButton1), true);
+      break;
+    case rex::ui::MouseEvent::Button::kX2:
+      SetKeyState(static_cast<uint16_t>(VirtualKey::kXButton2), true);
+      break;
     default:
       break;
   }
@@ -529,6 +602,12 @@ void MnkInputDriver::OnMouseUp(rex::ui::MouseEvent& e) {
     case rex::ui::MouseEvent::Button::kMiddle:
       SetKeyState(static_cast<uint16_t>(VirtualKey::kMButton), false);
       break;
+    case rex::ui::MouseEvent::Button::kX1:
+      SetKeyState(static_cast<uint16_t>(VirtualKey::kXButton1), false);
+      break;
+    case rex::ui::MouseEvent::Button::kX2:
+      SetKeyState(static_cast<uint16_t>(VirtualKey::kXButton2), false);
+      break;
     default:
       break;
   }
@@ -539,16 +618,28 @@ void MnkInputDriver::OnMouseMove(rex::ui::MouseEvent& e) {
     return;
   int32_t x = e.x();
   int32_t y = e.y();
+  float delta_x = 0.0f, delta_y = 0.0f;
   {
     std::lock_guard lock(state_mutex_);
     if (relative_mouse_mode_) {
       // The pointer is locked, so the absolute position no longer moves.
-      mouse_dx_ += e.dx();
-      mouse_dy_ += e.dy();
+      delta_x = e.dx();
+      delta_y = e.dy();
     } else {
-      mouse_dx_ += float(x - prev_mouse_x_);
-      mouse_dy_ += float(y - prev_mouse_y_);
+      delta_x = float(x - prev_mouse_x_);
+      delta_y = float(y - prev_mouse_y_);
     }
+    if (REXCVAR_GET(mnk_direct_mouse)) {
+      mouse_dx_ = mouse_dy_ = 0.0f;
+    } else {
+      mouse_dx_ += delta_x;
+      mouse_dy_ += delta_y;
+    }
+  }
+  if (mouse_captured_ && IsMouseLookActive() &&
+      REXCVAR_GET(mnk_mouse) && REXCVAR_GET(mnk_direct_mouse)) {
+    if (auto callback = mouse_motion_callback.load(std::memory_order_acquire))
+      callback(delta_x, delta_y, false);
   }
   prev_mouse_x_ = x;
   prev_mouse_y_ = y;

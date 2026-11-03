@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <unordered_map>
 
 #include <rex/dbg.h>
 #include <rex/input/device_assignment.h>
@@ -28,6 +29,10 @@ REXCVAR_DEFINE_STRING(input_backend, "sdl", "Input", "Input backend: sdl, xinput
     .allowed({"sdl", "xinput"});
 
 REXCVAR_DEFINE_BOOL(guide_button, false, "Input", "Enable guide button pass-through");
+// Updated only after an actual input change, not while a key is held or a
+// controller stick is drifting at rest. Host UI can query it across DLLs.
+REXCVAR_DEFINE_BOOL(input_prompt_keyboard, true, "Input",
+                    "Keyboard/mouse was the most recent active gameplay device");
 namespace rex::input {
 
 namespace {
@@ -244,6 +249,38 @@ X_RESULT InputSystem::GetState(uint32_t user_index, X_INPUT_STATE* out_state) {
       continue;
     }
     active_devices_.Observe(user_index, id, state.gamepad);
+    // Track rising buttons and meaningful stick motion per actual device.
+    // The MnK driver increments its packet number on every poll, so packet
+    // numbers alone cannot identify new input. Ignore debug synthetic pads.
+    if (user_index == 0) {
+      static std::unordered_map<uint64_t, X_INPUT_GAMEPAD> previous;
+      auto& before = previous[static_cast<uint64_t>(id)];
+      const auto& now = state.gamepad;
+      const uint16_t buttons = static_cast<uint16_t>(now.buttons);
+      const uint16_t old_buttons = static_cast<uint16_t>(before.buttons);
+      auto moved = [](int16_t a, int16_t b) {
+        return std::abs(int(a)) >= kThumbDeadzone &&
+               std::abs(int(a) - int(b)) >= 3500;
+      };
+      const bool activity = (buttons & ~old_buttons) != 0 ||
+          (now.left_trigger >= kTriggerThreshold &&
+           before.left_trigger < kTriggerThreshold) ||
+          (now.right_trigger >= kTriggerThreshold &&
+           before.right_trigger < kTriggerThreshold) ||
+          moved(now.thumb_lx, before.thumb_lx) ||
+          moved(now.thumb_ly, before.thumb_ly) ||
+          moved(now.thumb_rx, before.thumb_rx) ||
+          moved(now.thumb_ry, before.thumb_ry);
+      before = now;
+      const auto* info = DeviceInfoFor(id);
+      if (activity && info && (!info->synthetic ||
+                              info->name == "Keyboard and Mouse")) {
+        const bool keyboard = info->synthetic;
+        if (REXCVAR_GET(input_prompt_keyboard) != keyboard) {
+          rex::cvar::SetFlagByName("input_prompt_keyboard", keyboard ? "true" : "false");
+        }
+      }
+    }
     if (!any) {
       merged = state;
       any = true;
