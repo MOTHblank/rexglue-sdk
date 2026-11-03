@@ -22,7 +22,7 @@
 
 #define REX_MATERIAL_LIVE .lifecycle(rex::cvar::Lifecycle::kHotReload)
 
-REXCVAR_DEFINE_BOOL(material_shaders, true, "GPU/Materials",
+REXCVAR_DEFINE_BOOL(material_shaders, false, "GPU/Materials",
                     "Replace the game's own shaders with the improved material shaders "
                     "(restart to apply)");
 REXCVAR_DEFINE_STRING(material_shaders_path, "materials", "GPU/Materials",
