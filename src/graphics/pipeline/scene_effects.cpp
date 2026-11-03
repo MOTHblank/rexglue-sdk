@@ -22,7 +22,7 @@
 #define REX_SCENE_FX_LIVE .lifecycle(rex::cvar::Lifecycle::kHotReload)
 
 // Ambient occlusion.
-REXCVAR_DEFINE_BOOL(scene_fx_ao, true, "GPU/Effects",
+REXCVAR_DEFINE_BOOL(scene_fx_ao, false, "GPU/Effects",
                     "Ambient occlusion (GTAO with visibility bitmasks)") REX_SCENE_FX_LIVE;
 REXCVAR_DEFINE_INT32(scene_fx_ao_quality, 2, "GPU/Effects",
                      "Ambient occlusion quality: 0 = low, 1 = medium, 2 = high, 3 = ultra")
@@ -54,7 +54,7 @@ REXCVAR_DEFINE_DOUBLE(scene_fx_gi_intensity, 1.0, "GPU/Effects", "Global illumin
     .range(0.0, 4.0) REX_SCENE_FX_LIVE;
 
 // Contact shadows.
-REXCVAR_DEFINE_BOOL(scene_fx_contact_shadows, true, "GPU/Effects",
+REXCVAR_DEFINE_BOOL(scene_fx_contact_shadows, false, "GPU/Effects",
                     "Contact shadows: fine sun shadows the game's shadow maps miss")
     REX_SCENE_FX_LIVE;
 REXCVAR_DEFINE_DOUBLE(scene_fx_contact_shadows_length, 0.5, "GPU/Effects",
@@ -91,7 +91,7 @@ REXCVAR_DEFINE_BOOL(scene_fx_reflections_floors_only, false, "GPU/Effects",
     REX_SCENE_FX_LIVE;
 
 // Volumetric lighting.
-REXCVAR_DEFINE_BOOL(scene_fx_volumetrics, true, "GPU/Effects",
+REXCVAR_DEFINE_BOOL(scene_fx_volumetrics, false, "GPU/Effects",
                     "Volumetric lighting: light shafts through the game's sun shadows")
     REX_SCENE_FX_LIVE;
 REXCVAR_DEFINE_INT32(scene_fx_volumetrics_quality, 2, "GPU/Effects",
@@ -120,7 +120,7 @@ REXCVAR_DEFINE_STRING(scene_fx_sun_tint, "1.0,0.9,0.75", "GPU/Effects",
     REX_SCENE_FX_LIVE;
 
 // Fog.
-REXCVAR_DEFINE_BOOL(scene_fx_fog, true, "GPU/Effects",
+REXCVAR_DEFINE_BOOL(scene_fx_fog, false, "GPU/Effects",
                     "Height fog lit by the sky, with a glow toward the sun") REX_SCENE_FX_LIVE;
 REXCVAR_DEFINE_DOUBLE(scene_fx_fog_density, 0.0005, "GPU/Effects",
                       "Fog density everywhere, per world unit")
