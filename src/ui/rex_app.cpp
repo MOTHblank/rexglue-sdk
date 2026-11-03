@@ -252,6 +252,11 @@ bool ReXApp::ConstructRuntime(const PathConfig& paths) {
     input_sys->SetActiveCallback([this]() {
       if (window_ && !window_->HasFocus())
         return false;
+      // Fable's event-driven MnK driver may hold the pointer in relative mode
+      // before ImGui reports WantCaptureMouse. Deactivate synthetic game input
+      // for the whole F6 menu lifetime so it releases the cursor immediately.
+      if (effects_overlay_)
+        return false;
       if (!imgui_drawer_ || (!debug_overlay_ && !console_overlay_ && !settings_overlay_ &&
                              !effects_overlay_ && !achievements_overlay_))
         return true;
