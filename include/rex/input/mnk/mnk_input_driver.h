@@ -102,6 +102,11 @@ class MnkInputDriver final : public InputDriver,
   rex::ui::Window::CursorVisibility precapture_cursor_visibility_ =
       rex::ui::Window::CursorVisibility::kVisible;
 
+  // Focus/capture transitions may synthesize one mouse-motion event. Gameplay
+  // motion still receives that event, but it must not claim last-used-device
+  // prompt ownership until a subsequent physical motion sample arrives.
+  bool prompt_mouse_baseline_pending_ = true;
+
   // Guest thread to UI thread. The queued flag coalesces the posts.
   std::atomic<bool> mouse_capture_requested_{false};
   std::atomic<bool> mouse_capture_update_queued_{false};
