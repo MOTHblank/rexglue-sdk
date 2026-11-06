@@ -167,7 +167,14 @@ void SetMouseMotionCallback(MouseMotionCallback callback) {
 }
 
 void SetDirectMouseEligible(bool eligible) {
-  direct_mouse_eligible.store(eligible, std::memory_order_release);
+  const bool previous = direct_mouse_eligible.exchange(
+      eligible, std::memory_order_acq_rel);
+  if (previous != eligible) {
+    // Invalidate raw displacement at the handoff: it belongs to the old
+    // camera mode and must not appear as a later orbit jump.
+    if (auto callback = mouse_motion_callback.load(std::memory_order_acquire))
+      callback(0.0f, 0.0f, true);
+  }
 }
 
 void SetMouseLookActive(bool active) {
@@ -362,6 +369,15 @@ X_RESULT MnkInputDriver::GetDeviceState(DeviceId id, X_INPUT_STATE* out_state) {
   if (lx != 0 && ly != 0) {
     lx = (lx * 23170) / 32767;
     ly = (ly * 23170) / 32767;
+  }
+  // Do not replay buffered mouse motion from the previous camera mode.
+  // This is local to the driver's polled state and never changes controller
+  // stick input or key-based look bindings.
+  static thread_local bool previous_direct_mouse = false;
+  const bool direct_mouse = UseDirectMouse();
+  if (direct_mouse != previous_direct_mouse) {
+    mouse_dx_ = mouse_dy_ = 0.0f;
+    previous_direct_mouse = direct_mouse;
   }
   int32_t rx = 0;
   int32_t ry = 0;
