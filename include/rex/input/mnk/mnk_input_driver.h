@@ -87,6 +87,8 @@ class MnkInputDriver final : public InputDriver,
   // Filled on the UI thread, drained on the guest thread, hence the lock.
   float mouse_dx_ = 0.0f;
   float mouse_dy_ = 0.0f;
+  // Guest-thread snapshot of the input route, per driver instance.
+  bool previous_direct_mouse_ = false;
 
   // UI thread only.
   int32_t prev_mouse_x_ = 0;
