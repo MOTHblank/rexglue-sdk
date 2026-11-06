@@ -57,6 +57,7 @@ void InputSystem::Shutdown() {
   // device_owners_ holds raw driver pointers.
   devices_.clear();
   device_owners_.clear();
+  prompt_previous_states_.clear();
   drivers_.clear();
 }
 
@@ -152,6 +153,7 @@ void InputSystem::RefreshDevices() {
     if (std::none_of(seen.begin(), seen.end(),
                      [&](const DeviceInfo& d) { return d.id == old.id; })) {
       active_devices_.Forget(old.id);
+      prompt_previous_states_.erase(static_cast<uint64_t>(old.id));
       changed = true;
     }
   }
@@ -253,8 +255,8 @@ X_RESULT InputSystem::GetState(uint32_t user_index, X_INPUT_STATE* out_state) {
     // The MnK driver increments its packet number on every poll, so packet
     // numbers alone cannot identify new input. Ignore debug synthetic pads.
     if (user_index == 0) {
-      static std::unordered_map<uint64_t, X_INPUT_GAMEPAD> previous;
-      auto& before = previous[static_cast<uint64_t>(id)];
+      auto& before =
+          prompt_previous_states_[static_cast<uint64_t>(id)];
       const auto& now = state.gamepad;
       const uint16_t buttons = static_cast<uint16_t>(now.buttons);
       const uint16_t old_buttons = static_cast<uint16_t>(before.buttons);
