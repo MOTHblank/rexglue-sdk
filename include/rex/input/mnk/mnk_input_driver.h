@@ -27,6 +27,9 @@ bool IsMouseLookActive();
 // UI-thread mouse displacement; reset drops pending motion on focus/capture loss.
 using MouseMotionCallback = void (*)(float dx, float dy, bool reset);
 void SetMouseMotionCallback(MouseMotionCallback callback);
+// When false, raw mouse motion goes through the native virtual right stick.
+// The guest can switch this on camera changes without toggling the user cvar.
+void SetDirectMouseEligible(bool eligible);
 
 class MnkInputDriver final : public InputDriver,
                              public rex::ui::WindowInputListener,
