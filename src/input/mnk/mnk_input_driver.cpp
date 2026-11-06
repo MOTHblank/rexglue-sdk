@@ -373,11 +373,10 @@ X_RESULT MnkInputDriver::GetDeviceState(DeviceId id, X_INPUT_STATE* out_state) {
   // Do not replay buffered mouse motion from the previous camera mode.
   // This is local to the driver's polled state and never changes controller
   // stick input or key-based look bindings.
-  static thread_local bool previous_direct_mouse = false;
   const bool direct_mouse = UseDirectMouse();
-  if (direct_mouse != previous_direct_mouse) {
+  if (direct_mouse != previous_direct_mouse_) {
     mouse_dx_ = mouse_dy_ = 0.0f;
-    previous_direct_mouse = direct_mouse;
+    previous_direct_mouse_ = direct_mouse;
   }
   int32_t rx = 0;
   int32_t ry = 0;
