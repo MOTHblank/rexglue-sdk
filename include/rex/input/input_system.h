@@ -12,6 +12,7 @@
 
 #include <memory>
 #include <mutex>
+#include <unordered_map>
 #include <vector>
 
 #include <rex/input/device_assignment.h>
@@ -61,6 +62,11 @@ class InputSystem : public system::IInputSystem {
 
   std::unique_ptr<DeviceAssignment> assignment_;
   ActiveDeviceTracker active_devices_;
+
+  // Previous physical/synthetic pad snapshots used only for last-used prompt
+  // ownership. Keep these on the InputSystem instance so disconnect/reconnect
+  // and runtime recreation cannot inherit stale button/stick state.
+  std::unordered_map<uint64_t, X_INPUT_GAMEPAD> prompt_previous_states_;
 
   // Ordered by ordinal. Ordinals are never recycled, so unplugging pad one
   // does not renumber pad two.
