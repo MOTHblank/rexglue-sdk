@@ -9,6 +9,7 @@
  * @modified    Tom Clay, 2026 - Adapted for ReXGlue runtime
  */
 
+#include <rex/filesystem/device.h>
 #include <rex/filesystem/devices/host_path_entry.h>
 #include <rex/filesystem/devices/host_path_file.h>
 
