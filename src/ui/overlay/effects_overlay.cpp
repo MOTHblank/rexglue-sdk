@@ -354,6 +354,10 @@ void EffectsDialog::OnDraw(ImGuiIO& /*io*/) {
         "Percentage-closer soft shadows: sharp where objects touch the ground, softer the "
         "further the shadow falls.");
     SliderCvar("Sun size", "material_shadow_softness", 0.25f, 4.0f);
+    SliderCvar("Shadow distance", "material_shadow_distance_scale", 1.0f, 3.0f);
+    Description(
+        "Extends the game's sun-shadow fade only while the far cascade still covers the "
+        "surface, avoiding stretched edge samples.");
     CheckboxCvar("Physically based highlights", "material_specular");
     Description(
         "GGX highlights with Fresnel from each surface's specular map, and reflections "
