@@ -655,6 +655,17 @@ void MnkInputDriver::OnMouseUp(rex::ui::MouseEvent& e) {
   }
 }
 
+void MnkInputDriver::OnMouseWheel(rex::ui::MouseEvent& e) {
+  (void)e;
+  if (!IsEnabled() || !has_focus_)
+    return;
+
+  // Wheel input does not currently map to a guest gamepad control, but it is
+  // still unambiguous physical mouse activity. Let it reclaim keyboard/mouse
+  // prompt ownership just like a mouse button without inventing gameplay input.
+  MarkKeyboardPromptDevice();
+}
+
 void MnkInputDriver::OnMouseMove(rex::ui::MouseEvent& e) {
   if (!IsEnabled() || !has_focus_)
     return;
