@@ -34,6 +34,9 @@ REXCVAR_DEFINE_BOOL(material_soft_shadows, true, "GPU/Materials",
 REXCVAR_DEFINE_DOUBLE(material_shadow_softness, 1.0, "GPU/Materials",
                       "Size of the sun for soft shadows - larger is softer")
     .range(0.25, 4.0) REX_MATERIAL_LIVE;
+REXCVAR_DEFINE_DOUBLE(material_shadow_distance_scale, 1.5, "GPU/Materials",
+                      "Extend the game's sun shadow fade while the far cascade still covers the surface")
+    .range(1.0, 3.0) REX_MATERIAL_LIVE;
 REXCVAR_DEFINE_BOOL(material_specular, true, "GPU/Materials",
                     "Physically based highlights (GGX with Fresnel) instead of the game's "
                     "Phong")
@@ -116,6 +119,7 @@ void GetParams(float params_out[kMaterialParamsCount][4], uint32_t draw_resoluti
       params_out[i][j] = 0.0f;
     }
   }
+  params_out[1][0] = float(REXCVAR_GET(material_shadow_distance_scale));
   params_out[3][0] = float(draw_resolution_scale_x);
   params_out[3][1] = float(draw_resolution_scale_y);
   params_out[3][2] = std::bit_cast<float>(translation_flags);
