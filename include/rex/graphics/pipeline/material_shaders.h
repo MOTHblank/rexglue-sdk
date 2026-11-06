@@ -31,7 +31,8 @@ namespace rex::graphics::material_shaders {
 // 0.y - Soft shadow light size scale.
 // 0.z - Specular intensity.
 // 0.w - Surface roughness.
-// 1, 2 - Reserved.
+// 1.x - Sun shadow distance scale.
+// 1.yzw, 2 - Reserved.
 // 3.x, 3.y - Draw resolution scale.
 // 3.z - Translation flags (uint bits, TranslationFlag) - what the translator
 //       bakes into its shaders.
