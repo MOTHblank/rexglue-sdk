@@ -152,11 +152,22 @@ bool TokenPressed(const bool (&key_down)[256], std::string_view token, uint8_t l
 
 std::atomic<bool> mouse_look_active{true};
 std::atomic<MouseMotionCallback> mouse_motion_callback{nullptr};
+// Start in native mode until the guest identifies a compatible follow camera.
+std::atomic<bool> direct_mouse_eligible{false};
+
+bool UseDirectMouse() {
+  return REXCVAR_GET(mnk_direct_mouse) &&
+         direct_mouse_eligible.load(std::memory_order_acquire);
+}
 
 }  // namespace
 
 void SetMouseMotionCallback(MouseMotionCallback callback) {
   mouse_motion_callback.store(callback, std::memory_order_release);
+}
+
+void SetDirectMouseEligible(bool eligible) {
+  direct_mouse_eligible.store(eligible, std::memory_order_release);
 }
 
 void SetMouseLookActive(bool active) {
@@ -363,7 +374,7 @@ X_RESULT MnkInputDriver::GetDeviceState(DeviceId id, X_INPUT_STATE* out_state) {
   if (IsBindPressed(key_down_, REXCVAR_GET(keybind_rstick_down)))
     ry -= INT16_MAX;
 
-  if (REXCVAR_GET(mnk_mouse) && IsMouseLookActive() && !REXCVAR_GET(mnk_direct_mouse)) {
+  if (REXCVAR_GET(mnk_mouse) && IsMouseLookActive() && !UseDirectMouse()) {
     constexpr double kBaseScale = 256.0;
     // An Xbox stick tops out at +/-32767. Previously any mouse movement
     // past that limit was discarded on every poll, so high-DPI flicks barely
@@ -629,7 +640,7 @@ void MnkInputDriver::OnMouseMove(rex::ui::MouseEvent& e) {
       delta_x = float(x - prev_mouse_x_);
       delta_y = float(y - prev_mouse_y_);
     }
-    if (REXCVAR_GET(mnk_direct_mouse)) {
+    if (UseDirectMouse()) {
       mouse_dx_ = mouse_dy_ = 0.0f;
     } else {
       mouse_dx_ += delta_x;
@@ -637,7 +648,7 @@ void MnkInputDriver::OnMouseMove(rex::ui::MouseEvent& e) {
     }
   }
   if (mouse_captured_ && IsMouseLookActive() &&
-      REXCVAR_GET(mnk_mouse) && REXCVAR_GET(mnk_direct_mouse)) {
+      REXCVAR_GET(mnk_mouse) && UseDirectMouse()) {
     if (auto callback = mouse_motion_callback.load(std::memory_order_acquire))
       callback(delta_x, delta_y, false);
   }
