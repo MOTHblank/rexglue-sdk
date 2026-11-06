@@ -16,6 +16,7 @@
 
 #include <rex/filesystem.h>
 #include <rex/filesystem/file.h>
+#include <rex/memory/mapped_memory.h>
 
 namespace rex::filesystem {
 
@@ -36,6 +37,10 @@ class HostPathFile : public File {
 
  private:
   std::unique_ptr<rex::filesystem::FileHandle> file_handle_;
+  // Read-only game-content files may be mapped once and copied directly from
+  // the host page cache, avoiding a Win32 ReadFile transition for every guest
+  // read. Writable files never use this path.
+  std::unique_ptr<rex::memory::MappedMemory> mapped_memory_;
 };
 
 }  // namespace rex::filesystem
