@@ -537,10 +537,15 @@ void MnkInputDriver::ApplyMouseCaptureFromUIThread() {
   if (!relative_mouse_mode_) {
     REXLOG_WARN("Pointer lock unavailable, mouse look falls back to recentering the cursor");
   }
-  // Reset deltas to avoid a spike on capture start
+  // Reset deltas to avoid a spike on capture start. The first motion event
+  // after a capture-mode transition is also a prompt-ownership baseline:
+  // SDL may emit it for pointer-lock bookkeeping rather than physical motion.
   std::lock_guard lock(state_mutex_);
   mouse_dx_ = 0.0f;
   mouse_dy_ = 0.0f;
+  prompt_mouse_accum_x = 0.0f;
+  prompt_mouse_accum_y = 0.0f;
+  prompt_mouse_baseline_pending_ = true;
 }
 
 void MnkInputDriver::ReleaseMouseCaptureFromUIThread(rex::ui::Window* window) {
@@ -557,6 +562,9 @@ void MnkInputDriver::ReleaseMouseCaptureFromUIThread(rex::ui::Window* window) {
   std::lock_guard lock(state_mutex_);
   mouse_dx_ = 0.0f;
   mouse_dy_ = 0.0f;
+  prompt_mouse_accum_x = 0.0f;
+  prompt_mouse_accum_y = 0.0f;
+  prompt_mouse_baseline_pending_ = true;
 }
 
 void MnkInputDriver::RecenterCursorFromUIThread(int32_t x, int32_t y) {
@@ -708,7 +716,14 @@ void MnkInputDriver::OnMouseMove(rex::ui::MouseEvent& e) {
   bool meaningful_prompt_motion = false;
   {
     std::lock_guard lock(state_mutex_);
-    if (REXCVAR_GET(input_prompt_keyboard)) {
+    if (prompt_mouse_baseline_pending_) {
+      // Do not let a focus/capture bookkeeping event steal prompts from a
+      // controller. Only the ownership accumulator is suppressed; the event
+      // has already gone through the normal gameplay mouse path above.
+      prompt_mouse_baseline_pending_ = false;
+      prompt_mouse_accum_x = 0.0f;
+      prompt_mouse_accum_y = 0.0f;
+    } else if (REXCVAR_GET(input_prompt_keyboard)) {
       prompt_mouse_accum_x = 0.0f;
       prompt_mouse_accum_y = 0.0f;
     } else {
@@ -744,6 +759,7 @@ void MnkInputDriver::OnLostFocus(rex::ui::UISetupEvent&) {
     mouse_dy_ = 0.0f;
     prompt_mouse_accum_x = 0.0f;
     prompt_mouse_accum_y = 0.0f;
+    prompt_mouse_baseline_pending_ = true;
   }
   if (attached_window_) {
     ReleaseMouseCaptureFromUIThread(attached_window_);
@@ -752,6 +768,10 @@ void MnkInputDriver::OnLostFocus(rex::ui::UISetupEvent&) {
 
 void MnkInputDriver::OnGotFocus(rex::ui::UISetupEvent&) {
   has_focus_ = true;
+  std::lock_guard lock(state_mutex_);
+  prompt_mouse_accum_x = 0.0f;
+  prompt_mouse_accum_y = 0.0f;
+  prompt_mouse_baseline_pending_ = true;
 }
 
 }  // namespace rex::input::mnk
