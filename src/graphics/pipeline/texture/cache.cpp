@@ -65,18 +65,18 @@ REXCVAR_DEFINE_INT32(anisotropic_override, 3, "GPU",
 
 REXCVAR_DEFINE_INT32(draw_resolution_scale_x, 1, "GPU",
                      "Draw resolution scale X (1 = no scaling, maximum 7)")
-    .range(1, TextureCache::kMaxDrawResolutionScaleAlongAxis)
+    .range(1, rex::graphics::TextureCache::kMaxDrawResolutionScaleAlongAxis)
     .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
 
 REXCVAR_DEFINE_INT32(draw_resolution_scale_y, 1, "GPU",
                      "Draw resolution scale Y (1 = no scaling, maximum 7)")
-    .range(1, TextureCache::kMaxDrawResolutionScaleAlongAxis)
+    .range(1, rex::graphics::TextureCache::kMaxDrawResolutionScaleAlongAxis)
     .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
 
 REXCVAR_DEFINE_INT32(resolution_scale, 1, "GPU",
                      "Draw resolution scale for both X and Y axes (same as setting "
                      "draw_resolution_scale_x and draw_resolution_scale_y; maximum 7)")
-    .range(1, TextureCache::kMaxDrawResolutionScaleAlongAxis)
+    .range(1, rex::graphics::TextureCache::kMaxDrawResolutionScaleAlongAxis)
     .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
 
 REXCVAR_DEFINE_BOOL(pre_mask_resolve_l2_block, true, "GPU",
