@@ -69,6 +69,8 @@ REXCVAR_DEFINE_STRING(keybind_back, "Z,Tab", "Input/Keybinds/Controller", "Back 
 REXCVAR_DEFINE_STRING(keybind_start, "X,Return", "Input/Keybinds/Controller", "Start button");
 REXCVAR_DEFINE_STRING(keybind_guide, "", "Input/Keybinds/Controller", "Guide button");
 
+REXCVAR_DECLARE(bool, input_prompt_keyboard);
+
 namespace rex::input::mnk {
 
 namespace {
@@ -85,6 +87,12 @@ constexpr rex::input::DeviceId kMnkDevice = static_cast<rex::input::DeviceId>(0x
 constexpr uint8_t kModShift = 1u << 0;
 constexpr uint8_t kModCtrl = 1u << 1;
 constexpr uint8_t kModAlt = 1u << 2;
+
+inline void MarkKeyboardPromptDevice() {
+  if (!REXCVAR_GET(input_prompt_keyboard)) {
+    rex::cvar::SetFlagByName("input_prompt_keyboard", "true");
+  }
+}
 
 uint8_t LiveModifiers(const bool (&key_down)[256]) {
   uint8_t mods = 0;
@@ -576,6 +584,7 @@ void MnkInputDriver::SetKeyState(uint16_t vk, bool down) {
 void MnkInputDriver::OnKeyDown(rex::ui::KeyEvent& e) {
   if (!IsEnabled() || !has_focus_)
     return;
+  MarkKeyboardPromptDevice();
   std::lock_guard lock(state_mutex_);
   uint16_t vk = static_cast<uint16_t>(e.virtual_key());
   SetKeyState(vk, true);
@@ -592,6 +601,7 @@ void MnkInputDriver::OnKeyUp(rex::ui::KeyEvent& e) {
 void MnkInputDriver::OnMouseDown(rex::ui::MouseEvent& e) {
   if (!IsEnabled() || !has_focus_)
     return;
+  MarkKeyboardPromptDevice();
   std::lock_guard lock(state_mutex_);
   switch (e.button()) {
     case rex::ui::MouseEvent::Button::kLeft:
@@ -670,6 +680,9 @@ void MnkInputDriver::OnMouseMove(rex::ui::MouseEvent& e) {
       REXCVAR_GET(mnk_mouse) && direct_for_event) {
     if (auto callback = mouse_motion_callback.load(std::memory_order_acquire))
       callback(delta_x, delta_y, false);
+  }
+  if (delta_x != 0.0f || delta_y != 0.0f) {
+    MarkKeyboardPromptDevice();
   }
   prev_mouse_x_ = x;
   prev_mouse_y_ = y;
