@@ -1731,13 +1731,16 @@ void DxbcShaderTranslator::CompletePixelShader_AlphaToMask() {
   dxbc::Dest temp_x_dest(dxbc::Dest::R(temp, 0b0001));
   dxbc::Src temp_x_src(dxbc::Src::R(temp, dxbc::Src::kXXXX));
 
-  // Get the dithering threshold offset index for the pixel, Y - low bit of
-  // offset index, X - high bit, and extract the offset and convert it to
-  // floating-point. With resolution scaling, still using host pixels, to
-  // preserve the idea of dithering.
+  // Get the dithering threshold offset index for the guest pixel, Y - low bit
+  // of offset index, X - high bit, and extract the offset and convert it to
+  // floating-point. Host resolution scaling must not change the guest's 2x2
+  // alpha-to-coverage pattern within a single original pixel.
   // temp.x = alpha to coverage offset as float 0.0...3.0.
   in_position_used_ |= 0b0011;
-  a_.OpFToU(dxbc::Dest::R(temp, 0b0011), dxbc::Src::V1D(in_reg_ps_position_));
+  a_.OpMul(dxbc::Dest::R(temp, 0b0011), dxbc::Src::V1D(in_reg_ps_position_),
+           dxbc::Src::LF(1.0f / float(draw_resolution_scale_x_),
+                         1.0f / float(draw_resolution_scale_y_), 1.0f, 1.0f));
+  a_.OpFToU(dxbc::Dest::R(temp, 0b0011), dxbc::Src::R(temp));
   a_.OpAnd(dxbc::Dest::R(temp, 0b0010), dxbc::Src::R(temp, dxbc::Src::kYYYY), dxbc::Src::LU(1));
   a_.OpBFI(temp_x_dest, dxbc::Src::LU(1), dxbc::Src::LU(1), temp_x_src,
            dxbc::Src::R(temp, dxbc::Src::kYYYY));
