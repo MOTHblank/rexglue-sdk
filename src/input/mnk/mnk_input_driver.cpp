@@ -645,6 +645,10 @@ void MnkInputDriver::OnMouseMove(rex::ui::MouseEvent& e) {
   int32_t x = e.x();
   int32_t y = e.y();
   float delta_x = 0.0f, delta_y = 0.0f;
+  // Snapshot the routing decision once for this event. A camera-mode change
+  // on the guest thread must not send the same event into both paths (or
+  // silently lose it between the two checks).
+  const bool direct_for_event = UseDirectMouse();
   {
     std::lock_guard lock(state_mutex_);
     if (relative_mouse_mode_) {
@@ -655,7 +659,7 @@ void MnkInputDriver::OnMouseMove(rex::ui::MouseEvent& e) {
       delta_x = float(x - prev_mouse_x_);
       delta_y = float(y - prev_mouse_y_);
     }
-    if (UseDirectMouse()) {
+    if (direct_for_event) {
       mouse_dx_ = mouse_dy_ = 0.0f;
     } else {
       mouse_dx_ += delta_x;
@@ -663,7 +667,7 @@ void MnkInputDriver::OnMouseMove(rex::ui::MouseEvent& e) {
     }
   }
   if (mouse_captured_ && IsMouseLookActive() &&
-      REXCVAR_GET(mnk_mouse) && UseDirectMouse()) {
+      REXCVAR_GET(mnk_mouse) && direct_for_event) {
     if (auto callback = mouse_motion_callback.load(std::memory_order_acquire))
       callback(delta_x, delta_y, false);
   }
