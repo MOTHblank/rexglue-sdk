@@ -163,6 +163,12 @@ std::atomic<MouseMotionCallback> mouse_motion_callback{nullptr};
 // Start in native mode until the guest identifies a compatible follow camera.
 std::atomic<bool> direct_mouse_eligible{false};
 
+// Prompt ownership should react to intentional mouse use, not a one-off
+// fractional/raw-motion sample. This accumulator is touched only by the UI
+// input thread while state_mutex_ is held by the caller.
+float prompt_mouse_accum_x = 0.0f;
+float prompt_mouse_accum_y = 0.0f;
+
 bool UseDirectMouse() {
   return REXCVAR_GET(mnk_direct_mouse) &&
          direct_mouse_eligible.load(std::memory_order_acquire);
@@ -681,7 +687,30 @@ void MnkInputDriver::OnMouseMove(rex::ui::MouseEvent& e) {
     if (auto callback = mouse_motion_callback.load(std::memory_order_acquire))
       callback(delta_x, delta_y, false);
   }
-  if (delta_x != 0.0f || delta_y != 0.0f) {
+
+  // A physical button/key is an unambiguous device switch and is handled
+  // immediately above. Motion is noisier: SDL/raw-input backends may emit
+  // fractional deltas from high-resolution mice or cursor bookkeeping.
+  // Accumulate while a controller owns the prompts and require one physical
+  // pixel of travel before reclaiming them. Real mouse use still switches on
+  // the first normal event, while sub-pixel noise can't oscillate the UI.
+  bool meaningful_prompt_motion = false;
+  {
+    std::lock_guard lock(state_mutex_);
+    if (REXCVAR_GET(input_prompt_keyboard)) {
+      prompt_mouse_accum_x = 0.0f;
+      prompt_mouse_accum_y = 0.0f;
+    } else {
+      prompt_mouse_accum_x += delta_x;
+      prompt_mouse_accum_y += delta_y;
+      if (std::hypot(prompt_mouse_accum_x, prompt_mouse_accum_y) >= 1.0f) {
+        meaningful_prompt_motion = true;
+        prompt_mouse_accum_x = 0.0f;
+        prompt_mouse_accum_y = 0.0f;
+      }
+    }
+  }
+  if (meaningful_prompt_motion) {
     MarkKeyboardPromptDevice();
   }
   prev_mouse_x_ = x;
@@ -702,6 +731,8 @@ void MnkInputDriver::OnLostFocus(rex::ui::UISetupEvent&) {
     std::memset(key_down_, 0, sizeof(key_down_));
     mouse_dx_ = 0.0f;
     mouse_dy_ = 0.0f;
+    prompt_mouse_accum_x = 0.0f;
+    prompt_mouse_accum_y = 0.0f;
   }
   if (attached_window_) {
     ReleaseMouseCaptureFromUIThread(attached_window_);
