@@ -31,12 +31,10 @@ REXCVAR_DEFINE_BOOL(host_present_from_non_ui_thread, true, "UI/Presenter",
                     "Allow presentation from non-UI thread");
 
 REXCVAR_DEFINE_BOOL(pace_to_guest_vblank, false, "UI/Presenter",
-                    "Gate the host present (game frame) to the emulated guest "
-                    "vblank cadence - at most one present per guest vblank - so "
-                    "the display frame rate matches the guest vblank rate "
-                    "(the configured refresh rate, ~60 Hz) for profiling, rather "
-                    "than the slower render loop which may draw a new frame "
-                    "only every other vblank")
+                    "Suppress duplicate host presents so each newly rendered "
+                    "guest frame is presented at most once. This does not change "
+                    "guest simulation timing or synthesize extra frames; the "
+                    "legacy option name is retained for config compatibility.")
     .lifecycle(rex::cvar::Lifecycle::kHotReload);
 
 REXCVAR_DEFINE_BOOL(present_letterbox, true, "UI/Presenter",
@@ -1713,7 +1711,8 @@ bool Presenter::GuestVblankPaceAllows() {
   if (window_start == 0) {
     // First call after enabling: open the first rate window.
     guest_frame_pace_window_start_ms_.store(now_ms, std::memory_order_relaxed);
-    guest_frame_pace_window_start_vblank_count_.store(count, std::memory_order_relaxed);
+    guest_frame_pace_window_start_vblank_count_.store(
+        guest_vblank_count_.load(std::memory_order_relaxed), std::memory_order_relaxed);
     guest_frame_pace_window_start_frame_count_.store(
         guest_frame_count_.load(std::memory_order_relaxed), std::memory_order_relaxed);
     return allowed;
